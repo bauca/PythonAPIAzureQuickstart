@@ -15,10 +15,10 @@ trigger:
     - README.md
 
 variables:
-  DOCKER_HUB_IMAGE_TAG: brunoassisdocker/pythonazureapi
+  DOCKER_HUB_IMAGE_TAG: #DOCKER_HUB_LOGIN/REPOSITORY# e.g brunoassisdocker/pythonazureapi
   RELEASE_TAG: latest
   BUILD_TAG: build
-  DOCKER_HUB_SERVICE_CONNECTION: DockerServiceConnection
+  DOCKER_HUB_SERVICE_CONNECTION: #DOCKER_SERVICE_CONNECTION# e.g: DockerServiceConnection
   
 stages:
     - stage: BuildStage

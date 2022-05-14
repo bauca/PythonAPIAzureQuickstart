@@ -80,8 +80,15 @@ The command above will give you back the url which you should add as one webhook
 
 ## Build and deploy through Azure Pipelines
 
-1. Setup the `build_pipeline.yml` pointing to your GitHub repository.
+### 1. Setup the `build_pipeline.yml` pointing to your GitHub repository:
 
-> In Azure DevOps Go to: Pipelines / Create Pipeline. Select the `build_pipeline.yml` from your repository and save it.
+2. Replace the variables in the `build_pipeline.yml` pointing to your configuration:
+
+
+    `DOCKER_HUB_IMAGE_TAG: #DOCKER_HUB_LOGIN/REPOSITORY# eg.: mydockerlogin/myrepository`
+
+    `DOCKER_HUB_SERVICE_CONNECTION: #DOCKER_SERVICE_CONNECTION# e.g: DockerServiceConnection`
+
+3. In Azure DevOps Go to: Pipelines / Create Pipeline. Select the `build_pipeline.yml` from your repository and save it.
 
 This pipeline will automatically run after every commit in your `develop` or `main` branch and your API in Azure will get automatically updated with the latest version of your image. You can change this behaviour by changing the `trigger` in the `build_pipeline.yml` to point to your desired branch repository.

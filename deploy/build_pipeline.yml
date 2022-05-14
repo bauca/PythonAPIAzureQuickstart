@@ -1,0 +1,157 @@
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    include:
+    - src
+    - deploy
+    exclude:
+    - deploy/README.md
+    - deploy/docker/docker-compose.yml
+    - deploy/docker/infrastructure_pipeline.yml
+    - README.md
+
+variables:
+  DOCKER_HUB_IMAGE_TAG: brunoassisdocker/pythonazureapi
+  RELEASE_TAG: latest
+  BUILD_TAG: build
+  DOCKER_HUB_SERVICE_CONNECTION: DockerServiceConnection
+  
+stages:
+    - stage: BuildStage
+      displayName: Build project
+      jobs:
+      - job: BuildJob
+        displayName: 'Building Dockerfile'
+        steps:
+        - task: Docker@2
+          displayName: Login to Docker ACR
+          inputs:
+            command: login
+            containerRegistry: $(DOCKER_HUB_SERVICE_CONNECTION)
+        - script: |
+            docker build -f deploy/docker/Dockerfile -t $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG) src/backend
+          displayName: Building backend image
+        - script: |
+            docker push $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG)
+          displayName: Push build image
+
+    - stage: RunTests
+      dependsOn:
+      - BuildStage
+      displayName: Run Tests
+      jobs:
+      - job: RunUnitTests
+        dependsOn: []
+        displayName: Unit Tests
+        steps:
+        - checkout: none
+        - task: Docker@2
+          displayName: Login to Docker ACR
+          inputs:
+            command: login
+            containerRegistry: $(DOCKER_HUB_SERVICE_CONNECTION)
+        - script: |
+            docker pull $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG)            
+          displayName: Pulling Build image
+        - script: |
+            docker run --entrypoint /bin/bash \
+            -v $(Build.ArtifactStagingDirectory)/junit:/backend/junit \
+            -v $(Build.ArtifactStagingDirectory)/coverage:/backend/coverage \
+            $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG) -c "poetry run pytest --doctest-modules --junitxml=junit/test-unit-results.xml \
+            --cov=api --cov-report=xml:./coverage/coverage-unit.xml tests/unit"
+          displayName: Running Tests
+        - task: PublishBuildArtifacts@1
+          condition: always()
+          inputs:
+            pathToPublish: '$(Build.ArtifactStagingDirectory)/junit'
+            artifactName: 'unit-junit' 
+        - task: PublishBuildArtifacts@1
+          condition: always()
+          inputs:
+            pathToPublish: '$(Build.ArtifactStagingDirectory)/coverage'
+            artifactName: 'unit-coverage' 
+
+      - job: IntegrationTests
+        displayName: Integration Tests
+        dependsOn: []
+        steps:
+        - checkout: none
+        - task: Docker@2
+          displayName: Login to Docker ACR
+          inputs:
+            command: login
+            containerRegistry: $(DOCKER_HUB_SERVICE_CONNECTION)
+        - script: |
+            docker pull $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG)            
+          displayName: Pulling Build image
+        - script: |
+            docker run --entrypoint /bin/bash \
+            -v $(Build.ArtifactStagingDirectory)/junit:/backend/junit \
+            $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG) -c "poetry run pytest --doctest-modules \
+            --junitxml=junit/test-integration-results.xml tests/integration"
+          displayName: Running Integration Tests
+        - task: PublishBuildArtifacts@1
+          condition: always()
+          inputs:
+            pathToPublish: '$(Build.ArtifactStagingDirectory)/junit'
+            artifactName: 'integration-junit' 
+    
+    - stage: PublishCoverageAndTests
+      condition: always()
+      jobs:
+      - job: PublishTestCoverage
+        steps:
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: "unit-coverage"
+            path: $(Build.ArtifactStagingDirectory)/coverage
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: "unit-junit"
+            path: $(Build.ArtifactStagingDirectory)/junit
+        - task: DownloadPipelineArtifact@2
+          inputs:
+            artifact: "integration-junit"
+            path: $(Build.ArtifactStagingDirectory)/junit
+        - script:
+            ls -ltra $(Build.ArtifactStagingDirectory)
+            $(Build.ArtifactStagingDirectory)/junit
+            $(Build.ArtifactStagingDirectory)/coverage
+        - task: PublishTestResults@2
+          inputs:
+            testResultsFormat: 'JUnit' 
+            testResultsFiles: '**/test-*.xml' 
+            searchFolder: '$(Build.ArtifactStagingDirectory)/junit' 
+            testRunTitle: API Tests
+        - task: PublishCodeCoverageResults@1
+          inputs:
+            codeCoverageTool: 'Cobertura'
+            summaryFileLocation: '$(Build.ArtifactStagingDirectory)/coverage/coverage-unit.xml'
+            pathToSources: "$(Build.SourcesDirectory)/src/backend/api"
+          
+    - stage: Deploy
+      displayName: Deploying with CD
+      dependsOn:
+      - RunTests
+      jobs:
+      - job: Deployment
+        steps:
+        - checkout: none
+        - task: Docker@2
+          displayName: Login to Docker ACR
+          inputs:
+            command: login
+            containerRegistry: $(DOCKER_HUB_SERVICE_CONNECTION)
+        - script: |
+            docker pull $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG)
+          displayName: Pulling build image
+        - script: |
+            docker tag $(DOCKER_HUB_IMAGE_TAG):$(BUILD_TAG) $(DOCKER_HUB_IMAGE_TAG):$(RELEASE_TAG)
+          displayName: Tag release image
+        - script: |
+            docker push $(DOCKER_HUB_IMAGE_TAG):$(RELEASE_TAG)
+          displayName: Push image to Docker Hub & Deploy

@@ -1,0 +1,90 @@
+# Information:
+# There is a better way to provision your infra by using ARM Templates (Not covered in here)
+
+# Requirements for this pipeline:
+# - A Resource group has to be manually created either through the Azure CLI or through the Azure Portal.
+# - A service connection pointing to your Azure Subscription
+# In Azure DevOps:
+# - Go to Project Settings / Service Connections / Azure Resource Manager
+
+parameters:
+  - name: ResourceGroup
+    displayName: "Resource Group (Alphanumeric only)"
+    type: string
+    default: ""
+  - name: AppService
+    displayName: "App Service Name (Alphanumeric only)"
+    type: string
+    default: ""
+  - name: WebApp
+    displayName: "WebApp Name (Alphanumeric only)"
+    type: string
+    default: ""
+  - name: DockerHubRepository
+    displayName: "DockerHubRepository e.g: (reponame/image:tag)"
+    type: string
+    default: ""
+  - name: AzureTemplateAPIServiceConnection
+    displayName: "The name of the Azure Service connection"
+    type: string
+    default: "AzureTemplateAPIServiceConnection"
+
+trigger:
+- none
+
+# This is the service connection name which you set up in Azure Devops
+variables:
+  AzureServiceConnectionName: ${{ parameters.AzureTemplateAPIServiceConnection }}
+  DockerHubURL: "https://index.docker.io/v1"
+
+stages:
+  - stage: InfraSetup
+    displayName: Infra Set up
+    jobs:
+    - job: ProvisionInfra
+      displayName: Provisioning Infrastructure
+      steps:      
+
+      - task: AzureCLI@2
+        displayName: Creating App Service
+        inputs:
+          azureSubscription: $(AzureServiceConnectionName)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            az appservice plan create -g ${{ parameters.ResourceGroup }} \
+            -n ${{ parameters.AppService }} --is-linux --sku B1
+     
+      - task: AzureCLI@2
+        displayName: Creating Web App (Backend)
+        inputs:
+          azureSubscription: $(AzureServiceConnectionName)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            az webapp create --name ${{ parameters.WebApp }} \
+            -g ${{ parameters.ResourceGroup }} \
+            --plan ${{ parameters.AppService }} \
+            -i ${{ parameters.DockerHubRepository }}
+      
+      - task: AzureCLI@2
+        displayName: Configure WebApp to Pull from DockerHub
+        inputs:
+          azureSubscription: $(AzureServiceConnectionName)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            az webapp config container set --name ${{ parameters.WebApp }} \
+            -g ${{ parameters.ResourceGroup }} \
+            -r $(DockerHubURL)            
+ 
+      - task: AzureCLI@2
+        displayName: Enabling CD for WebApp
+        inputs:
+          azureSubscription: $(AzureServiceConnectionName)
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            az webapp deployment container config -g ${{ parameters.ResourceGroup }} \
+            --name ${{ parameters.WebApp }} --enable-cd true 
+

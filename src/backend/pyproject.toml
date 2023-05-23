@@ -9,7 +9,7 @@ license = "MIT"
 python = "^3.10"
 fastapi = "^0.75.2"
 uvicorn = "^0.17.6"
-requests = "^2.27.1"
+requests = "^2.31.0"
 pytest-cov = "^3.0.0"
 
 [tool.poetry.dev-dependencies]
